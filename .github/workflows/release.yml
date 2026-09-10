@@ -1,0 +1,42 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-release:
+    name: Build Release Artifacts & NSIS Installer
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: true
+
+      - name: Run Tests
+        run: go test -v ./...
+
+      - name: Build Binaries & Installer
+        run: powershell -ExecutionPolicy Bypass -File packaging\build_dist.ps1
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/HrunnerSetup.exe
+            hrunner.exe
+            hlauncher.exe
+            hbuild.exe
+            hmanager.exe
+          draft: false
+          prerelease: false
+          generate_release_notes: true

@@ -1,0 +1,33 @@
+# Binaries and build outputs
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+dist/
+bin/
+
+# Test and coverage artifacts
+*.test
+*.out
+cover.out
+
+# Go workspace and cache
+vendor/
+
+# Operating system / IDE
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.idea/
+.vscode/
+
+# Python caches in examples/tests
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+*.egg-info/

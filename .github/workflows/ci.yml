@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test-and-build:
+    name: Build & Test (Windows x64)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: true
+
+      - name: Run Go Tests
+        run: go test -v ./...
+
+      - name: Compile Hrunner Binaries
+        run: |
+          go build -ldflags="-s -w" -o hrunner.exe ./cmd/hrunner
+          go build -ldflags="-s -w" -o hlauncher.exe ./cmd/hlauncher
+          go build -ldflags="-s -w" -o hbuild.exe ./cmd/hbuild
+          go build -ldflags="-s -w" -o hmanager.exe ./cmd/hmanager
+
+      - name: Test Sample Application Build
+        run: |
+          .\hbuild.exe build .\examples\hello-world -o dist\HelloWorld.exe --launcher-stub .\hlauncher.exe
+          if (-not (Test-Path dist\HelloWorld.exe)) { throw "HelloWorld.exe was not created" }
