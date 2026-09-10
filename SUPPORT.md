@@ -26,4 +26,4 @@ Before opening an issue, check the comprehensive documentation:
 
 ## 3. Security Inquiries
 
-For private security vulnerabilities, please refer to [SECURITY.md](SECURITY.md) or email [tgtygaming60@gmail.com](mailto:tgtygaming60@gmail.com).
+For private security vulnerabilities, please refer to [SECURITY.md](SECURITY.md) 
