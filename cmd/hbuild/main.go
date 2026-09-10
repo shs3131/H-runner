@@ -32,6 +32,7 @@ func main() {
 	entryFlag := buildFlags.String("entrypoint", "", "Entrypoint Python file (e.g. main.py)")
 	pubFlag := buildFlags.String("publisher", "", "Publisher name")
 	stubFlag := buildFlags.String("launcher-stub", "", "Path to hlauncher.exe stub")
+	installerFlag := buildFlags.Bool("installer", false, "Generate Windows NSIS setup installer (<Name>Setup.exe)")
 
 	_ = buildFlags.Parse(os.Args[2:])
 
@@ -41,16 +42,17 @@ func main() {
 	}
 
 	cfg := &builder.BuildConfig{
-		ProjectPath:     projectPath,
-		OutputPath:      *outputFlag,
-		Name:            *nameFlag,
-		Version:         *verFlag,
-		ApplicationID:   *appIDFlag,
-		PythonVersion:   *pyFlag,
-		AllowCompatible: *compatFlag,
-		Entrypoint:      *entryFlag,
-		Publisher:       *pubFlag,
-		LauncherStub:    *stubFlag,
+		ProjectPath:       projectPath,
+		OutputPath:        *outputFlag,
+		Name:              *nameFlag,
+		Version:           *verFlag,
+		ApplicationID:     *appIDFlag,
+		PythonVersion:     *pyFlag,
+		AllowCompatible:   *compatFlag,
+		Entrypoint:        *entryFlag,
+		Publisher:         *pubFlag,
+		LauncherStub:      *stubFlag,
+		GenerateInstaller: *installerFlag,
 	}
 
 	fmt.Printf("Building Hrunner package for: %s\n", projectPath)
@@ -63,6 +65,9 @@ func main() {
 	fmt.Printf("✓ Successfully built %s in %v\n", res.OutputPath, res.Duration)
 	fmt.Printf("✓ Final executable size: %s (%d bytes)\n", ui.FormatBytes(res.SizeBytes), res.SizeBytes)
 	fmt.Println("  (Contains application code and manifest; zero bundled Python/wheels)")
+	if res.InstallerPath != "" {
+		fmt.Printf("✓ Generated application setup installer: %s\n", res.InstallerPath)
+	}
 }
 
 func printUsage() {

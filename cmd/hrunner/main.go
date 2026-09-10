@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hrunner/hrunner/pkg/builder"
 	"github.com/hrunner/hrunner/pkg/packages"
 	"github.com/hrunner/hrunner/pkg/protocol"
 	"github.com/hrunner/hrunner/pkg/registry"
@@ -331,10 +332,90 @@ func main() {
 			}
 			fmt.Printf("Application %s removed successfully.\n", appID)
 			return
+		case "install", "add":
+			if len(args) < 2 {
+				fmt.Println("Usage: hrunner install <package_name> [version] [--python 3.13.7]")
+				return
+			}
+			pkgName := args[1]
+			pkgVer := ""
+			pyVerStr := "3.13.7"
+			if len(args) > 2 && !strings.HasPrefix(args[2], "--") {
+				pkgVer = args[2]
+			}
+			for i := 2; i < len(args); i++ {
+				if args[i] == "--python" && i+1 < len(args) {
+					pyVerStr = args[i+1]
+				}
+			}
+			pyVer, err := runtime.ParseVersion(pyVerStr)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Invalid Python version: %v\n", err)
+				os.Exit(1)
+			}
+			fmt.Printf("Fetching and installing %s from official PyPI repository...\n", pkgName)
+			installed, err := core.pkgStore.EnsurePackage(pkgName, pkgVer, pyVer, func(dl, tot int64, pct float64) {
+				if tot > 0 {
+					fmt.Printf("\rDownloading wheel from PyPI: %.1f%% (%s / %s)", pct, ui.FormatBytes(dl), ui.FormatBytes(tot))
+				}
+			})
+			fmt.Println()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Installation failed: %v\n", err)
+				os.Exit(1)
+			}
+			fmt.Printf("✓ Successfully installed %s %s (%s) into central pool.\n", installed.Name, installed.Version, ui.FormatBytes(installed.SizeBytes))
+			return
+		case "install-requirements":
+			if len(args) < 2 {
+				fmt.Println("Usage: hrunner install-requirements <requirements.txt> [--python 3.13.7]")
+				return
+			}
+			reqFile := args[1]
+			pyVerStr := "3.13.7"
+			for i := 2; i < len(args); i++ {
+				if args[i] == "--python" && i+1 < len(args) {
+					pyVerStr = args[i+1]
+				}
+			}
+			pyVer, err := runtime.ParseVersion(pyVerStr)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Invalid Python version: %v\n", err)
+				os.Exit(1)
+			}
+			deps, err := builder.ParseRequirementsTxt(reqFile)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to parse %s: %v\n", reqFile, err)
+				os.Exit(1)
+			}
+			fmt.Printf("Resolving %d dependencies from official PyPI repository...\n", len(deps))
+			plan, err := core.resolver.Resolve(deps, pyVer)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Dependency resolution failed: %v\n", err)
+				os.Exit(1)
+			}
+			fmt.Printf("Found %d packages (%d missing, total download %s)\n",
+				len(plan.AllPackages), len(plan.MissingPackages), ui.FormatBytes(plan.TotalDownloadBytes))
+			for idx, mp := range plan.MissingPackages {
+				fmt.Printf("[%d/%d] Downloading %s %s (%s)...\n", idx+1, len(plan.MissingPackages), mp.Name, mp.Version, ui.FormatBytes(mp.DownloadBytes))
+				installed, err := core.pkgStore.EnsurePackage(mp.Name, mp.Version, pyVer, func(dl, tot int64, pct float64) {
+					if tot > 0 {
+						fmt.Printf("\r  Progress: %.1f%% (%s / %s)", pct, ui.FormatBytes(dl), ui.FormatBytes(tot))
+					}
+				})
+				fmt.Println()
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Failed to install %s: %v\n", mp.Name, err)
+					os.Exit(1)
+				}
+				fmt.Printf("  ✓ Installed %s %s\n", installed.Name, installed.Version)
+			}
+			fmt.Println("✓ All requirements installed into shared package pool.")
+			return
 		case "manager":
 			*managerFlag = true
 		default:
-			fmt.Printf("Unknown command '%s'. Available: apps, runtimes, packages, clean, storage, remove, manager\n", cmd)
+			fmt.Printf("Unknown command '%s'. Available: apps, runtimes, packages, install, install-requirements, clean, storage, remove, manager\n", cmd)
 			return
 		}
 	}

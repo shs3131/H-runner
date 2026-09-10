@@ -26,15 +26,17 @@ type BuildConfig struct {
 	PythonVersion   string
 	AllowCompatible bool
 	Entrypoint      string
-	Dependencies    map[string]string
-	LauncherStub    string
+	Dependencies      map[string]string
+	LauncherStub      string
+	GenerateInstaller bool
 }
 
 // BuildResult contains statistics about the generated executable.
 type BuildResult struct {
-	OutputPath string
-	SizeBytes  int64
-	Duration   time.Duration
+	OutputPath    string
+	SizeBytes     int64
+	Duration      time.Duration
+	InstallerPath string
 }
 
 // ParseRequirementsTxt parses a standard requirements.txt file for pinned dependencies.
@@ -255,10 +257,22 @@ func Build(cfg *BuildConfig) (*BuildResult, error) {
 	if err != nil {
 		return nil, err
 	}
+	_ = outF.Close()
+
+	installerPath := ""
+	if cfg.GenerateInstaller {
+		p, err := GenerateAppInstaller(cfg, cfg.OutputPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Installer warning: %v\n", err)
+		} else {
+			installerPath = p
+		}
+	}
 
 	return &BuildResult{
-		OutputPath: cfg.OutputPath,
-		SizeBytes:  fi.Size(),
-		Duration:   time.Since(start),
+		OutputPath:    cfg.OutputPath,
+		SizeBytes:     fi.Size(),
+		Duration:      time.Since(start),
+		InstallerPath: installerPath,
 	}, nil
 }

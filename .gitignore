@@ -6,6 +6,7 @@
 *.dylib
 dist/
 bin/
+build/
 
 # Test and coverage artifacts
 *.test

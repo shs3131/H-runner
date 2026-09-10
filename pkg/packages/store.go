@@ -182,21 +182,35 @@ func (s *PackageStore) InstallWheel(wheelPath, pkgName, version string) (*Instal
 // EnsurePackage downloads and installs a package if missing, or reuses existing (deduplication).
 func (s *PackageStore) EnsurePackage(name, version string, pyVer *runtime.Version, progress func(downloaded, total int64, pct float64)) (*InstalledPackage, error) {
 	normName := NormalizePackageName(name)
-	targetDir := filepath.Join(s.packagesDir, normName, version)
-
-	// Check if already in pool (Shared Package Deduplication)
-	if s.IsPackageInstalled(normName, version) {
-		return &InstalledPackage{
-			Name:      normName,
-			Version:   version,
-			Path:      targetDir,
-			SizeBytes: calculateDirSize(targetDir),
-		}, nil
+	if version != "" {
+		targetDir := filepath.Join(s.packagesDir, normName, version)
+		// Check if already in pool (Shared Package Deduplication)
+		if s.IsPackageInstalled(normName, version) {
+			return &InstalledPackage{
+				Name:      normName,
+				Version:   version,
+				Path:      targetDir,
+				SizeBytes: calculateDirSize(targetDir),
+			}, nil
+		}
 	}
 
 	meta, err := s.pypi.FetchMetadata(name, version)
 	if err != nil {
 		return nil, err
+	}
+
+	if version == "" {
+		version = meta.Version
+		targetDir := filepath.Join(s.packagesDir, normName, version)
+		if s.IsPackageInstalled(normName, version) {
+			return &InstalledPackage{
+				Name:      normName,
+				Version:   version,
+				Path:      targetDir,
+				SizeBytes: calculateDirSize(targetDir),
+			}, nil
+		}
 	}
 
 	wheel, err := s.pypi.SelectBestWheel(meta, pyVer)
