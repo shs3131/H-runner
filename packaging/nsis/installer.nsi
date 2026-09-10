@@ -19,8 +19,7 @@ RequestExecutionLevel user
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
-!define MUI_FINISHPAGE_RUN "$INSTDIR\hrunner.exe"
-!define MUI_FINISHPAGE_RUN_PARAMETERS "--manager"
+!define MUI_FINISHPAGE_RUN "$INSTDIR\hmanager.exe"
 !define MUI_FINISHPAGE_RUN_TEXT "Open Hrunner Manager"
 !insertmacro MUI_PAGE_FINISH
 
@@ -34,6 +33,7 @@ Section "Hrunner Core" SecCore
 
     ; Core binaries
     File "..\..\hrunner.exe"
+    File "..\..\hmanager.exe"
     File "..\..\hlauncher.exe"
     File "..\..\hbuild.exe"
 
@@ -41,9 +41,11 @@ Section "Hrunner Core" SecCore
     WriteRegStr HKCU "Software\Hrunner" "InstallPath" "$INSTDIR"
     WriteRegStr HKCU "Software\Hrunner" "Version" "1.0.1"
 
-    ; App Paths registration so hrunner can be launched via Win+R or shell
+    ; App Paths registration so hrunner/hmanager can be launched via Win+R or shell
     WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\App Paths\hrunner.exe" "" "$INSTDIR\hrunner.exe"
     WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\App Paths\hrunner.exe" "Path" "$INSTDIR"
+    WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\App Paths\hmanager.exe" "" "$INSTDIR\hmanager.exe"
+    WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\App Paths\hmanager.exe" "Path" "$INSTDIR"
 
     ; Add to User PATH via registry
     ReadRegStr $0 HKCU "Environment" "PATH"
@@ -69,7 +71,7 @@ Section "Hrunner Core" SecCore
 
     ; Start Menu Shortcut
     CreateDirectory "$SMPROGRAMS\Hrunner"
-    CreateShortcut "$SMPROGRAMS\Hrunner\Hrunner Manager.lnk" "$INSTDIR\hrunner.exe" "--manager"
+    CreateShortcut "$SMPROGRAMS\Hrunner\Hrunner Manager.lnk" "$INSTDIR\hmanager.exe"
     CreateShortcut "$SMPROGRAMS\Hrunner\Uninstall Hrunner.lnk" "$INSTDIR\Uninstall.exe"
 SectionEnd
 
@@ -81,6 +83,7 @@ Section "Uninstall"
 
     ; Remove files
     Delete "$INSTDIR\hrunner.exe"
+    Delete "$INSTDIR\hmanager.exe"
     Delete "$INSTDIR\hlauncher.exe"
     Delete "$INSTDIR\hbuild.exe"
     Delete "$INSTDIR\Uninstall.exe"
@@ -89,6 +92,7 @@ Section "Uninstall"
     ; Remove registry keys
     DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Hrunner"
     DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\App Paths\hrunner.exe"
+    DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\App Paths\hmanager.exe"
     DeleteRegKey HKCU "Software\Hrunner"
 
     SendMessage ${HWND_BROADCAST} ${WM_WININICHANGE} 0 "STR:Environment" /TIMEOUT=2000

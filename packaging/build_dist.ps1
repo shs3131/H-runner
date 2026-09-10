@@ -9,6 +9,9 @@ Write-Host "==> Compiling Hrunner binaries (pure Go, -ldflags='-s -w')..." -Fore
 go build -ldflags="-s -w" -o "$RootDir\hrunner.exe" .\cmd\hrunner
 Write-Host "  ✓ Built hrunner.exe ($( (Get-Item "$RootDir\hrunner.exe").Length ) bytes)" -ForegroundColor Green
 
+go build -ldflags="-s -w" -o "$RootDir\hmanager.exe" .\cmd\hmanager
+Write-Host "  ✓ Built hmanager.exe ($( (Get-Item "$RootDir\hmanager.exe").Length ) bytes)" -ForegroundColor Green
+
 go build -ldflags="-s -w" -o "$RootDir\hlauncher.exe" .\cmd\hlauncher
 Write-Host "  ✓ Built hlauncher.exe ($( (Get-Item "$RootDir\hlauncher.exe").Length ) bytes)" -ForegroundColor Green
 

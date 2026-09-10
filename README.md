@@ -78,7 +78,7 @@ Hrunner takes a different approach:
 | **Dependency Sharing** | **Central pool (deduplicated)** | None (duplicated per app) | None (isolated per app) |
 | **Multi-App Storage** | **Shared & reference-counted** | Multiplied per application | Multiplied per application |
 | **Daemon / Service** | **None (on-demand auto-exit)** | None | None |
-| **Management UI** | **Native Win32 Manager** | None | None |
+| **Management UI** | **Windows 11 Fluent Design** | None | None |
 | **IPC Mechanism** | **Windows Named Pipes** | N/A | N/A |
 
 ---
@@ -97,7 +97,7 @@ Hrunner consists of two distinct components:
 │  ├── Shared Package Pool (Physical Deduplication)      │
 │  ├── Application Registry (registry.json)              │
 │  ├── Native Windows TaskDialog Installer Flow          │
-│  └── Native Win32 Manager GUI (hmanager)               │
+│  └── Windows 11 Fluent GUI (hmanager, DWM Mica)        │
 └──────────────────────────▲─────────────────────────────┘
                            │ Windows Named Pipe
                            │ (\\.\pipe\hrunner)
@@ -328,12 +328,19 @@ hbuild build <project_path> [flags]
 
 ## Hrunner Manager
 
-Hrunner includes a 100% native Windows GUI (built with Win32 Common Controls and TaskDialogs) accessible by running `hmanager` or `hrunner --manager`:
+Hrunner includes a 100% native Windows 11 Fluent Design desktop manager (`hmanager` or `hrunner --manager`), styled after Windows 11 Settings and Lossless Scaling with zero web views or localhost networking:
 
-* **Applications**: View all registered applications, launch them, or uninstall them.
-* **Package Pool**: Inspect package versions, see which applications use each package, and identify unused packages.
-* **Remove Unused Packages**: Free disk space by cleaning orphaned packages with zero applications depending on them.
-* **Storage**: View live disk consumption for runtimes, packages, applications, and cache.
+![Hrunner Manager](docs/assets/manager_fluent.png)
+
+### Key Features
+* **Windows 11 Fluent / WinUI 3 Aesthetics**: Native DWM Mica backdrop (`DWMWA_SYSTEMBACKDROP_TYPE`), rounded cards (`DWMWA_WINDOW_CORNER_PREFERENCE`), Segoe UI Variable subpixel typography, and custom vector icons.
+* **Home Dashboard**: Real-time metric cards for registered applications, embeddable Python runtimes, shared deduplicated packages, and total storage footprint.
+* **Applications**: Inspect isolated application manifests, launch registered apps directly, or cleanly unregister them with automatic dependency impact calculation.
+* **Python Runtimes**: View centrally installed embeddable Python distributions, versions, disk paths, and installation status.
+* **Shared Package Pool**: Inspect deduplicated Python wheels with per-package application reference counts and disk sizes.
+* **Storage & Cache**: Interactive segmented disk usage visualizer breaking down runtimes, packages, application payloads, and download cache, with one-click cleanup for orphaned dependencies.
+* **Settings & Diagnostics**: Inspect central paths, IPC named pipe health, DWM backdrop status, and runtime integrity.
+* **100% Native**: Built using native Win32 + GDI+ double-buffered rendering. Zero Chromium, zero Electron, zero WebView2, zero browser windows, zero localhost HTTP ports.
 
 ---
 

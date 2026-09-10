@@ -95,3 +95,25 @@ func TestRegressionManagerComctl32V6(t *testing.T) {
 	}
 }
 
+func TestFluentThemeAndGdiplus(t *testing.T) {
+	theme := DefaultFluentTheme()
+	if theme == nil {
+		t.Fatal("expected non-nil FluentTheme")
+	}
+	if theme.AccentPrimary == 0 {
+		t.Fatal("expected non-zero AccentPrimary")
+	}
+	if theme.BgCard == 0 {
+		t.Fatal("expected non-zero BgCard")
+	}
+
+	c := MakeRGB(10, 20, 30)
+	if c != MakeARGB(255, 10, 20, 30) {
+		t.Errorf("MakeRGB mismatch: got 0x%X", c)
+	}
+
+	// Test GDI+ startup and shutdown
+	InitGdiplus()
+	ShutdownGdiplus()
+}
+

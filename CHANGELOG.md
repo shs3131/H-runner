@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.2] - 2026-09-10
+
+### Added
+* **Windows 11 Fluent Design / WinUI 3 Manager UI (`hmanager.exe`)**:
+  * Redesigned Hrunner Manager from scratch as a modern Windows 11 desktop application styled after Windows 11 Settings and Lossless Scaling.
+  * 100% native Go Windows desktop app: zero WebView, zero Electron, zero browser, zero localhost HTTP servers, zero Node.js.
+  * Native Windows 11 DWM Mica backdrop integration (`DWMWA_SYSTEMBACKDROP_TYPE = DWMSBT_MAINWINDOW`) and rounded window geometry (`DWMWA_WINDOW_CORNER_PREFERENCE = DWMWCP_ROUND`).
+  * Custom GDI+ double-buffered anti-aliased rendering engine (`pkg/ui/fluent_render.go`) for 60 FPS flicker-free resizing, smooth scrolling, and hover transitions.
+  * Segoe UI Variable typography with subpixel ClearType rendering and dynamic DPI scaling.
+  * Custom resolution-independent Fluent vector icons (Home, Applications, Chip, Cube, Storage Layers, Settings Gear, Play, Trash, Refresh, Folder).
+  * Modern sidebar navigation with active indicator bars, hover highlights, and real-time service status.
+  * 6 dedicated views:
+    * **Home Dashboard**: Metric stat cards, Quick Actions bar, and registered application list.
+    * **Applications**: Application cards with Python version badges, entrypoint details, direct Launch action, and unregister flow with dependency impact analysis.
+    * **Python Runtimes**: Central embeddable distribution viewer with disk paths and installation status.
+    * **Shared Package Pool**: Deduplicated package viewer with application reference counts and disk sizes.
+    * **Storage & Cache**: Interactive segmented disk usage visualizer (Runtimes, Packages, Applications, Cache) with one-click cleanup for orphaned dependencies.
+    * **Settings & Diagnostics**: System paths, Named Pipe IPC health, DWM backdrop status, and runtime diagnostics.
+  * Per-monitor High-DPI v2 awareness.
+  * Included `hmanager.exe` in NSIS installer (`dist/HrunnerSetup.exe`), Start Menu shortcuts, and App Paths registry.
+
 ## [1.0.1] - 2026-09-10
 
 ### Fixed
