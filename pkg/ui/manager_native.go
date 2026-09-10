@@ -426,7 +426,7 @@ func (m *NativeManager) renderSidebar(fc *FluentContext, sw, sh float32) {
 	fc.DrawString("H", m.fonts.CardHead, MakeRGB(255, 255, 255), 20, brandY+2, iconSize, iconSize, StringAlignmentCenter, StringAlignmentCenter)
 
 	fc.DrawString("Hrunner", m.fonts.CardHead, t.TextPrimary, 60, brandY+2, 100, 20, StringAlignmentNear, StringAlignmentNear)
-	fc.DrawString("v1.0.1", m.fonts.Caption, t.TextSecondary, 60, brandY+20, 100, 14, StringAlignmentNear, StringAlignmentNear)
+	fc.DrawString("v1.0.3", m.fonts.Caption, t.TextSecondary, 60, brandY+20, 100, 14, StringAlignmentNear, StringAlignmentNear)
 
 	// Navigation Menu items
 	navItems := []struct {
@@ -922,7 +922,7 @@ func (m *NativeManager) renderSettingsPage(fc *FluentContext, cx, cw, ch float32
 		btnHit   HitType
 		badge    string
 	}{
-		{"Hrunner Version", "Release v1.0.1 (Windows x64 Native Architecture)", "", 0, "Up to date"},
+		{"Hrunner Version", "Release v1.0.3 (Windows x64 Native Architecture)", "", 0, "Up to date"},
 		{"Central Storage Directory", registry.DefaultHrunnerDir(), "Open in Explorer", HitBtnOpenDir, ""},
 		{"Named Pipe IPC", "\\\\.\\pipe\\hrunner (On-demand auto-shutdown server)", "", 0, "Active"},
 		{"Diagnostics & Integrity", "Verify runtime environments and shared pool integrity", "Check Now", HitBtnCheckDiag, ""},

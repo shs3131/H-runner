@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.3] - 2026-09-10
+
+### Added
+* **Application NSIS Setup Generator (`hbuild -installer`)**:
+  * Added `-installer` / `--installer` flag to `hbuild build` to automatically compile a full Windows NSIS setup wizard (`<AppName>Setup.exe`).
+  * Installs application to `%LOCALAPPDATA%\Programs\<AppName>`, creates Start Menu & Desktop shortcuts, and registers standard uninstaller in Windows Settings / Control Panel.
+  * Produces ultra-compact setup installers (e.g. `CameraApp_HrunnerSetup.exe` is only 2.01 MB).
+* **Direct PyPI CLI Package Management (`hrunner install` / `hrunner install-requirements`)**:
+  * Added `hrunner install <package> [version] [--python <ver>]` to download and install wheels directly from official PyPI into the central deduplicated store.
+  * Added `hrunner install-requirements <requirements.txt> [--python <ver>]` to batch resolve and pre-install dependencies into the shared pool.
+* **Hrunner Vision Camera Reference Application (`examples/camera-app/`)**:
+  * Production computer vision reference application leveraging `opencv-python`, `pillow`, and `numpy`.
+  * Features dual-mode video capture (hardware webcam or animated high-tech synthetic HUD fallback), live filters (Normal, Sepia, Canny edge detection, Cyberpunk invert, Gaussian blur), and Pillow snapshot engine with screen flash.
+* **Benchmark & PyInstaller Comparison Suite (`tests/benchmarks/`)**:
+  * Comprehensive benchmark report measuring executable sizes (4.6 MB vs 63.9 MB, 92.8% reduction), build times (62 ms vs 30.2 s, 480x faster), and multi-app disk savings.
+
 ## [1.0.2] - 2026-09-10
 
 ### Added
