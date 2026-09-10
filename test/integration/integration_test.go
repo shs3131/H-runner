@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/hrunner/hrunner/pkg/packages"
 	"github.com/hrunner/hrunner/pkg/protocol"
 	"github.com/hrunner/hrunner/pkg/registry"
+	"github.com/hrunner/hrunner/pkg/resolver"
 	"github.com/hrunner/hrunner/pkg/runtime"
 	"github.com/hrunner/hrunner/pkg/storage"
 )
@@ -252,3 +254,80 @@ func TestCompleteMVPIntegrationFlow(t *testing.T) {
 		t.Fatal("server did not auto-shutdown after idle period")
 	}
 }
+
+func TestEdgeCasesAndFailureModes(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	pkgStore, err := packages.NewPackageStore(tmpDir, nil)
+	if err != nil {
+		t.Fatalf("pkgStore init: %v", err)
+	}
+
+	// 1. Corrupt wheel installation should fail cleanly without polluting the store
+	corruptWhl := filepath.Join(tmpDir, "corrupt-1.0.0-py3-none-any.whl")
+	if err := os.WriteFile(corruptWhl, []byte("NOT_A_VALID_ZIP_ARCHIVE"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = pkgStore.InstallWheel(corruptWhl, "corrupt", "1.0.0")
+	if err == nil {
+		t.Fatal("expected install of corrupted wheel to fail, but succeeded")
+	}
+
+	// Verify corrupted package directory does NOT exist in package store
+	corruptPkgDir := pkgStore.GetPackageDir("corrupt", "1.0.0")
+	if _, err := os.Stat(corruptPkgDir); !os.IsNotExist(err) {
+		t.Fatalf("corrupt package dir was left behind: %s", corruptPkgDir)
+	}
+
+	// 2. Resolver non-existent package returns clear error
+	res := resolver.NewResolver(pkgStore, nil)
+	v3137, _ := runtime.ParseVersion("3.13.7")
+	_, err = res.Resolve(map[string]string{
+		"this-package-definitely-does-not-exist-hrunner-test-xyz": "9.9.9",
+	}, v3137)
+	if err == nil {
+		t.Fatal("expected resolution for non-existent package to fail")
+	}
+	if !strings.Contains(err.Error(), "not found on PyPI") {
+		t.Fatalf("expected 'not found on PyPI' error, got: %v", err)
+	}
+}
+
+func TestConcurrentPipeOperations(t *testing.T) {
+	pipeName := fmt.Sprintf(`\\.\pipe\hrunner_concurrency_%d`, time.Now().UnixNano())
+	server := protocol.NewServer(pipeName, 500*time.Millisecond, nil)
+	if err := server.Start(); err != nil {
+		t.Fatalf("server start failed: %v", err)
+	}
+	defer func() {
+		_ = server.Close()
+	}()
+
+	const numClients = 8
+	errChan := make(chan error, numClients)
+
+	for i := 0; i < numClients; i++ {
+		go func(clientIdx int) {
+			client, err := protocol.Dial(pipeName, 2*time.Second)
+			if err != nil {
+				errChan <- fmt.Errorf("client %d dial failed: %w", clientIdx, err)
+				return
+			}
+			defer client.Close()
+
+			if err := client.Ping(1 * time.Second); err != nil {
+				errChan <- fmt.Errorf("client %d ping failed: %w", clientIdx, err)
+				return
+			}
+			errChan <- nil
+		}(i)
+	}
+
+	for i := 0; i < numClients; i++ {
+		if err := <-errChan; err != nil {
+			t.Errorf("concurrent client error: %v", err)
+		}
+	}
+}
+

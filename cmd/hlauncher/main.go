@@ -134,7 +134,12 @@ func main() {
 
 		if base.Type == protocol.MsgLaunchResponse {
 			var resp protocol.LaunchResponse
-			_ = resp // Check errors
+			if err := jsonUnmarshal(line, &resp); err == nil {
+				if resp.Status == protocol.StatusError {
+					fmt.Fprintf(os.Stderr, "Launch failed: %s\n", resp.ErrorMessage)
+					os.Exit(1)
+				}
+			}
 		} else if base.Type == protocol.MsgLaunchReady {
 			var r protocol.LaunchReady
 			if err := jsonUnmarshal(line, &r); err == nil {
@@ -153,7 +158,11 @@ func main() {
 	entrypointPath := filepath.Join(appCacheDir, readyInfo.Entrypoint)
 	bootstrapCode := runtime.BuildBootstrapScript(appCacheDir, entrypointPath, readyInfo.PackagePaths)
 
-	cmd := exec.Command(readyInfo.PythonExePath, "-c", bootstrapCode)
+	pyArgs := []string{"-c", bootstrapCode}
+	if len(os.Args) > 1 {
+		pyArgs = append(pyArgs, os.Args[1:]...)
+	}
+	cmd := exec.Command(readyInfo.PythonExePath, pyArgs...)
 	cmd.Dir = appCacheDir
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout

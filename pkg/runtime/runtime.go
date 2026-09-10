@@ -358,6 +358,7 @@ if app_dir and os.path.isdir(app_dir) and app_dir not in sys.path:
 
 entrypoint = %q
 if __name__ == '__main__':
+    sys.argv = [entrypoint] + sys.argv[1:]
     runpy.run_path(entrypoint, run_name='__main__')
 `, pkgLines.String(), escapedAppDir, escapedEntrypoint)
 }
