@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"unsafe"
@@ -11,6 +12,9 @@ import (
 )
 
 var (
+	kernel32                = syscall.NewLazyDLL("kernel32.dll")
+	procCreateActCtxW       = kernel32.NewProc("CreateActCtxW")
+	procActivateActCtx      = kernel32.NewProc("ActivateActCtx")
 	modComctl32             = syscall.NewLazyDLL("comctl32.dll")
 	procTaskDialogIndirect  = modComctl32.NewProc("TaskDialogIndirect")
 	procInitCommonControls  = modComctl32.NewProc("InitCommonControlsEx")
@@ -90,7 +94,8 @@ type TASKDIALOGCONFIG struct {
 }
 
 func init() {
-	// Initialize common controls v6
+	enableCommonControlsV6()
+
 	type INITCOMMONCONTROLSEX struct {
 		dwSize uint32
 		dwICC  uint32
@@ -99,7 +104,57 @@ func init() {
 		dwSize: uint32(unsafe.Sizeof(INITCOMMONCONTROLSEX{})),
 		dwICC:  0x0000ffff,
 	}
-	_, _, _ = procInitCommonControls.Call(uintptr(unsafe.Pointer(&icc)))
+	if procInitCommonControls.Find() == nil {
+		_, _, _ = procInitCommonControls.Call(uintptr(unsafe.Pointer(&icc)))
+	}
+}
+
+func enableCommonControlsV6() {
+	manifestXML := `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+  <dependency>
+    <dependentAssembly>
+      <assemblyIdentity
+        type="win32"
+        name="Microsoft.Windows.Common-Controls"
+        version="6.0.0.0"
+        processorArchitecture="*"
+        publicKeyToken="6595b64144ccf1df"
+        language="*"
+      />
+    </dependentAssembly>
+  </dependency>
+</assembly>`
+
+	manifestPath := filepath.Join(os.TempDir(), "hrunner_comctl6.manifest")
+	if err := os.WriteFile(manifestPath, []byte(manifestXML), 0644); err != nil {
+		return
+	}
+
+	src, _ := syscall.UTF16PtrFromString(manifestPath)
+	type ACTCTXW struct {
+		cbSize                 uint32
+		dwFlags                uint32
+		lpSource               *uint16
+		wProcessorArchitecture uint16
+		wLangId                uint16
+		lpAssemblyDirectory    *uint16
+		lpResourceName         *uint16
+		lpApplicationName      *uint16
+		hModule                uintptr
+	}
+
+	var actCtx ACTCTXW
+	actCtx.cbSize = uint32(unsafe.Sizeof(actCtx))
+	actCtx.lpSource = src
+
+	if procCreateActCtxW.Find() == nil && procActivateActCtx.Find() == nil {
+		hActCtx, _, _ := procCreateActCtxW.Call(uintptr(unsafe.Pointer(&actCtx)))
+		if hActCtx != 0 && hActCtx != ^uintptr(0) {
+			var cookie uintptr
+			_, _, _ = procActivateActCtx.Call(hActCtx, uintptr(unsafe.Pointer(&cookie)))
+		}
+	}
 }
 
 // ShowMessageBoxFallback displays a standard Win32 MessageBox.
@@ -115,6 +170,15 @@ func ShowTaskDialog(title, instruction, content string, flags uint32, buttons []
 	if os.Getenv("HRUNNER_HEADLESS") == "1" {
 		// Headless testing mode: default button
 		return defaultBtn, nil
+	}
+
+	// If TaskDialogIndirect is not available, safely fall back to MessageBoxW without panicking
+	if procTaskDialogIndirect.Find() != nil {
+		mb := ShowMessageBox(title, instruction+"\n\n"+content, 0x00000001 /* MB_OKCANCEL */)
+		if mb == 1 {
+			return defaultBtn, nil
+		}
+		return IDCANCEL, nil
 	}
 
 	tPtr, _ := syscall.UTF16PtrFromString(title)

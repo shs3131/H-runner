@@ -2,6 +2,7 @@ package integration
 
 import (
 	"archive/zip"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -330,4 +331,96 @@ func TestConcurrentPipeOperations(t *testing.T) {
 		}
 	}
 }
+
+type testLauncherHandler struct {
+	pyExe string
+}
+
+func (h *testLauncherHandler) HandleLaunchRequest(req *protocol.LaunchRequest, conn *protocol.ClientConn) (*protocol.LaunchResponse, error) {
+	_ = conn.SendMessage(&protocol.LaunchReady{
+		BaseMessage:   protocol.BaseMessage{ProtocolVersion: protocol.CurrentProtocolVersion, Type: protocol.MsgLaunchReady},
+		PythonExePath: h.pyExe,
+		PackagePaths:  []string{},
+		Entrypoint:    req.Entrypoint,
+	})
+	return &protocol.LaunchResponse{
+		BaseMessage:     protocol.BaseMessage{ProtocolVersion: protocol.CurrentProtocolVersion, Type: protocol.MsgLaunchResponse},
+		Status:          protocol.StatusReady,
+		PythonAvailable: true,
+	}, nil
+}
+func (h *testLauncherHandler) OnClientConnected()    {}
+func (h *testLauncherHandler) OnClientDisconnected() {}
+
+func TestRegressionLauncherRequestNoHang(t *testing.T) {
+	// Regression test for Bug 2: Ensure LaunchRequest properly sets protocol version and type,
+	// and server does not return "missing or invalid protocol_version in message" causing launcher hang.
+	pipeName := fmt.Sprintf(`\\.\pipe\hrunner_reg_hang_%d`, time.Now().UnixNano())
+	tmpDir := t.TempDir()
+
+	pyExe := filepath.Join(tmpDir, "python.exe")
+	_ = os.WriteFile(pyExe, []byte("mock python"), 0755)
+
+	h := &testLauncherHandler{pyExe: pyExe}
+	server := protocol.NewServer(pipeName, 2*time.Second, h)
+	if err := server.Start(); err != nil {
+		t.Fatalf("server start failed: %v", err)
+	}
+	defer server.Close()
+
+	client, err := protocol.Dial(pipeName, 2*time.Second)
+	if err != nil {
+		t.Fatalf("client dial failed: %v", err)
+	}
+	defer client.Close()
+
+	// Replicate the exact struct created in cmd/hlauncher
+	req := &protocol.LaunchRequest{
+		BaseMessage: protocol.BaseMessage{
+			ProtocolVersion: protocol.CurrentProtocolVersion,
+			Type:            protocol.MsgLaunchRequest,
+		},
+		ApplicationID: "com.example.testapp",
+		Name:          "TestApp",
+		Version:       "1.0.0",
+		Python:        "3.13.7",
+		Dependencies:  map[string]string{},
+		Entrypoint:    "main.py",
+	}
+
+	if err := client.Send(req); err != nil {
+		t.Fatalf("failed to send launch request: %v", err)
+	}
+
+	// Read response: must receive LaunchReady and NOT an error about protocol_version
+	var receivedReady bool
+	for {
+		line, err := client.ReadLine()
+		if err != nil {
+			t.Fatalf("failed to read line: %v", err)
+		}
+
+		base, err := protocol.DecodeBaseMessage(line)
+		if err != nil {
+			t.Fatalf("DecodeBaseMessage failed: %v", err)
+		}
+
+		if base.Type == protocol.MsgLaunchResponse {
+			var resp protocol.LaunchResponse
+			if err := json.Unmarshal(line, &resp); err == nil {
+				if resp.Status == protocol.StatusError {
+					t.Fatalf("server returned error: %s", resp.ErrorMessage)
+				}
+			}
+		} else if base.Type == protocol.MsgLaunchReady {
+			receivedReady = true
+			break
+		}
+	}
+
+	if !receivedReady {
+		t.Fatal("expected LaunchReady to be received successfully without hanging")
+	}
+}
+
 

@@ -39,7 +39,7 @@ Section "Hrunner Core" SecCore
 
     ; Write registry entries for application discovery
     WriteRegStr HKCU "Software\Hrunner" "InstallPath" "$INSTDIR"
-    WriteRegStr HKCU "Software\Hrunner" "Version" "1.0.0"
+    WriteRegStr HKCU "Software\Hrunner" "Version" "1.0.1"
 
     ; App Paths registration so hrunner can be launched via Win+R or shell
     WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\App Paths\hrunner.exe" "" "$INSTDIR\hrunner.exe"
@@ -64,7 +64,7 @@ Section "Hrunner Core" SecCore
     WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Hrunner" "DisplayName" "Hrunner Runtime & Package Manager"
     WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Hrunner" "UninstallString" '"$INSTDIR\Uninstall.exe"'
     WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Hrunner" "DisplayIcon" "$INSTDIR\hrunner.exe"
-    WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Hrunner" "DisplayVersion" "1.0.0"
+    WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Hrunner" "DisplayVersion" "1.0.1"
     WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Hrunner" "Publisher" "Hrunner Project"
 
     ; Start Menu Shortcut

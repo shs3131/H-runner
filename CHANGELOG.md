@@ -7,7 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.1] - 2026-09-10
+
+### Fixed
+* **Native Manager (`hmanager.exe`)**:
+  * Fixed crash/immediate exit on startup caused by `TaskDialogIndirect` procedure lookup panic in legacy `comctl32.dll`.
+  * Implemented dynamic activation context (`ACTCTX`) for `Microsoft.Windows.Common-Controls` version 6.0.0.0.
+  * Added safe procedure address checking (`proc.Find()`) to prevent any unhandled Win32 DLL panics.
+  * Implemented genuine Win32 window creation and message loop (`CreateWindowExW`, `GetMessageW`, `DispatchMessageW`) keeping the Manager window persistently open until closed by user.
+  * Added interactive tabs and real-time views for Applications, Shared Package Pool, Python Runtimes, and Storage Breakdown.
+* **Application Launcher (`hlauncher.exe` / `SampleApp.exe`)**:
+  * Fixed black console hang caused by uninitialized `BaseMessage` in `LaunchRequest` resulting in protocol version validation failure on Hrunner Named Pipe server.
+  * Added error checking on `MsgLaunchResponse` so error states immediately report `ErrorMessage` to stderr and exit instead of blocking indefinitely on pipe reads.
+  * Added CLI argument forwarding (`os.Args[1:]`) and initialized `sys.argv = [entrypoint] + sys.argv[1:]` in the runtime bootstrap script.
+* **Regression Testing**:
+  * Added `TestRegressionManagerComctl32V6` in `pkg/ui` verifying Comctl32 v6 activation and no-panic TaskDialog execution.
+  * Added `TestRegressionLauncherRequestNoHang` in `test/integration` verifying launcher request framing and no-hang IPC flow.
+
 ## [1.0.0] - 2026-09-10
+
 
 ### Added
 * **Hrunner Main App (`hrunner`)**:

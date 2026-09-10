@@ -103,6 +103,10 @@ func main() {
 
 	// 6. Send launch request
 	req := &protocol.LaunchRequest{
+		BaseMessage: protocol.BaseMessage{
+			ProtocolVersion: protocol.CurrentProtocolVersion,
+			Type:            protocol.MsgLaunchRequest,
+		},
 		ApplicationID:         appManifest.ApplicationID,
 		Name:                  appManifest.Name,
 		Version:               appManifest.Version,

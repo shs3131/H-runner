@@ -2,14 +2,99 @@ package ui
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"syscall"
+	"unsafe"
 
 	"github.com/hrunner/hrunner/pkg/packages"
 	"github.com/hrunner/hrunner/pkg/registry"
 	"github.com/hrunner/hrunner/pkg/runtime"
 	"github.com/hrunner/hrunner/pkg/storage"
+)
+
+var (
+	procRegisterClassExW = modUser32.NewProc("RegisterClassExW")
+	procCreateWindowExW  = modUser32.NewProc("CreateWindowExW")
+	procDefWindowProcW   = modUser32.NewProc("DefWindowProcW")
+	procDestroyWindow    = modUser32.NewProc("DestroyWindow")
+	procPostQuitMessage  = modUser32.NewProc("PostQuitMessage")
+	procShowWindow       = modUser32.NewProc("ShowWindow")
+	procUpdateWindow     = modUser32.NewProc("UpdateWindow")
+	procGetMessageW      = modUser32.NewProc("GetMessageW")
+	procTranslateMessage = modUser32.NewProc("TranslateMessage")
+	procDispatchMessageW = modUser32.NewProc("DispatchMessageW")
+	procSendMessageW     = modUser32.NewProc("SendMessageW")
+	procSetWindowTextW   = modUser32.NewProc("SetWindowTextW")
+	procGetSystemMetrics = modUser32.NewProc("GetSystemMetrics")
+
+	modGdi32           = syscall.NewLazyDLL("gdi32.dll")
+	procGetStockObject = modGdi32.NewProc("GetStockObject")
+)
+
+type WNDCLASSEXW struct {
+	cbSize        uint32
+	style         uint32
+	lpfnWndProc   uintptr
+	cbClsExtra    int32
+	cbWndExtra    int32
+	hInstance     uintptr
+	hIcon         uintptr
+	hCursor       uintptr
+	hbrBackground uintptr
+	lpszMenuName  *uint16
+	lpszClassName *uint16
+	hIconSm       uintptr
+}
+
+type POINT struct {
+	x, y int32
+}
+
+type MSG struct {
+	hwnd    uintptr
+	message uint32
+	wParam  uintptr
+	lParam  uintptr
+	time    uint32
+	pt      POINT
+}
+
+const (
+	WM_DESTROY       = 0x0002
+	WM_SETFONT       = 0x0030
+	WM_COMMAND       = 0x0111
+	WS_OVERLAPPED    = 0x00000000
+	WS_CAPTION       = 0x00C00000
+	WS_SYSMENU       = 0x00080000
+	WS_THICKFRAME    = 0x00040000
+	WS_MINIMIZEBOX   = 0x00020000
+	WS_VISIBLE       = 0x10000000
+	WS_CHILD         = 0x40000000
+	WS_BORDER        = 0x00800000
+	WS_VSCROLL       = 0x00200000
+	WS_HSCROLL       = 0x00100000
+	ES_MULTILINE     = 0x0004
+	ES_READONLY      = 0x0800
+	ES_AUTOVSCROLL   = 0x0040
+	COLOR_BTNFACE    = 15
+	DEFAULT_GUI_FONT = 17
+	SW_SHOW          = 5
+	SM_CXSCREEN      = 0
+	SM_CYSCREEN      = 1
+
+	TabApplications = 101
+	TabPackages     = 102
+	TabRuntimes     = 103
+	TabStorage      = 104
+
+	CmdCleanPackages = 201
+	CmdRefresh       = 202
+	CmdLaunchApp     = 203
+	CmdRemoveApp     = 204
+	CmdClose         = 205
 )
 
 const (
@@ -26,14 +111,21 @@ const (
 )
 
 // NativeManager provides the 100% native Windows GUI for Hrunner Manager.
-// It uses native Windows TaskDialogs with Command Links and Common Controls.
+// It uses native Windows windows, controls, and TaskDialogs with Common Controls.
 // It NEVER opens a web browser or localhost HTTP server.
 type NativeManager struct {
 	reg        *registry.RegistryStore
 	runtimes   *runtime.RuntimeStore
 	pkgStore   *packages.PackageStore
 	storageMgr *storage.StorageManager
+
+	activeTab  int
+	hwndEdit   uintptr
+	hwndStatus uintptr
+	hwndMain   uintptr
 }
+
+var activeManagerInstance *NativeManager
 
 // NewNativeManager creates a new native Windows manager instance.
 func NewNativeManager(reg *registry.RegistryStore, runtimes *runtime.RuntimeStore, pkgStore *packages.PackageStore, storageMgr *storage.StorageManager) *NativeManager {
@@ -42,62 +134,332 @@ func NewNativeManager(reg *registry.RegistryStore, runtimes *runtime.RuntimeStor
 		runtimes:   runtimes,
 		pkgStore:   pkgStore,
 		storageMgr: storageMgr,
+		activeTab:  TabApplications,
 	}
 }
 
-// RunInteractiveLoop presents the native Windows Manager UI.
+func managerWndProc(hwnd uintptr, msg uint32, wParam, lParam uintptr) uintptr {
+	switch msg {
+	case WM_COMMAND:
+		cmdID := int(wParam & 0xffff)
+		if activeManagerInstance != nil {
+			activeManagerInstance.handleCommand(cmdID)
+		}
+		return 0
+	case WM_DESTROY:
+		procPostQuitMessage.Call(0)
+		return 0
+	}
+	r, _, _ := procDefWindowProcW.Call(hwnd, uintptr(msg), wParam, lParam)
+	return r
+}
+
+// RunInteractiveLoop presents the native Windows Manager UI and message loop.
 func (m *NativeManager) RunInteractiveLoop() {
-	for {
-		apps := m.reg.List()
-		rts, _ := m.runtimes.List()
-		usages, _ := m.storageMgr.GetPackageUsageMap()
-		sum, _ := m.storageMgr.GetSummary()
+	if os.Getenv("HRUNNER_HEADLESS") == "1" {
+		return
+	}
 
-		unusedCount := 0
-		for _, u := range usages {
-			if u.RefCount == 0 {
-				unusedCount++
-			}
-		}
+	goruntime.LockOSThread()
+	defer goruntime.UnlockOSThread()
 
-		// Main navigation command links
-		btnApps, _ := syscall.UTF16PtrFromString(fmt.Sprintf("Installed Applications (%d)\nView, launch, or remove registered Python applications", len(apps)))
-		btnPkgs, _ := syscall.UTF16PtrFromString(fmt.Sprintf("Shared Package Pool (%d packages, %d unused)\nInspect deduplicated dependencies and clean unused packages", len(usages), unusedCount))
-		btnRts, _ := syscall.UTF16PtrFromString(fmt.Sprintf("Python Runtimes (%d installed)\nInspect installed embeddable Python distributions", len(rts)))
-		btnStorage, _ := syscall.UTF16PtrFromString(fmt.Sprintf("Storage Usage (%s total)\nInspect disk space used by runtimes, packages, and cache", FormatBytes(sum.TotalBytes)))
-		btnClose, _ := syscall.UTF16PtrFromString("Close Manager\nExit Hrunner Manager")
+	activeManagerInstance = m
 
-		buttons := []TASKDIALOG_BUTTON{
-			{nButtonID: BtnNavApps, pszButtonText: btnApps},
-			{nButtonID: BtnNavPackages, pszButtonText: btnPkgs},
-			{nButtonID: BtnNavRuntimes, pszButtonText: btnRts},
-			{nButtonID: BtnNavStorage, pszButtonText: btnStorage},
-			{nButtonID: BtnNavExit, pszButtonText: btnClose},
-		}
+	className, _ := syscall.UTF16PtrFromString("HrunnerManagerWindow")
+	windowTitle, _ := syscall.UTF16PtrFromString("Hrunner Desktop Manager - Python Runtime & Dependency Manager")
 
-		res, err := ShowTaskDialog(
-			"Hrunner Manager",
-			"Hrunner Desktop Manager",
-			"Central management for Python runtimes, shared dependencies, and native desktop applications.",
-			TDF_USE_COMMAND_LINKS,
-			buttons,
-			BtnNavApps,
+	var wc WNDCLASSEXW
+	wc.cbSize = uint32(unsafe.Sizeof(wc))
+	wc.lpfnWndProc = syscall.NewCallback(managerWndProc)
+	wc.hbrBackground = uintptr(COLOR_BTNFACE + 1)
+	wc.lpszClassName = className
+
+	procRegisterClassExW.Call(uintptr(unsafe.Pointer(&wc)))
+
+	// Center on screen
+	scrW, _, _ := procGetSystemMetrics.Call(SM_CXSCREEN)
+	scrH, _, _ := procGetSystemMetrics.Call(SM_CYSCREEN)
+	wndW := int32(840)
+	wndH := int32(580)
+	x := (int32(scrW) - wndW) / 2
+	y := (int32(scrH) - wndH) / 2
+	if x < 0 {
+		x = 50
+	}
+	if y < 0 {
+		y = 50
+	}
+
+	style := uint32(WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_VISIBLE)
+	hwnd, _, _ := procCreateWindowExW.Call(
+		0,
+		uintptr(unsafe.Pointer(className)),
+		uintptr(unsafe.Pointer(windowTitle)),
+		uintptr(style),
+		uintptr(x), uintptr(y), uintptr(wndW), uintptr(wndH),
+		0, 0, 0, 0,
+	)
+	if hwnd == 0 {
+		return
+	}
+	m.hwndMain = hwnd
+
+	font, _, _ := procGetStockObject.Call(DEFAULT_GUI_FONT)
+
+	// Header static
+	staticClass, _ := syscall.UTF16PtrFromString("STATIC")
+	headerText, _ := syscall.UTF16PtrFromString("Hrunner Desktop Manager")
+	hHeader, _, _ := procCreateWindowExW.Call(
+		0, uintptr(unsafe.Pointer(staticClass)), uintptr(unsafe.Pointer(headerText)),
+		WS_CHILD|WS_VISIBLE,
+		20, 15, 780, 24,
+		hwnd, 0, 0, 0,
+	)
+	if hHeader != 0 && font != 0 {
+		procSendMessageW.Call(hHeader, WM_SETFONT, font, 1)
+	}
+
+	subText, _ := syscall.UTF16PtrFromString("Central management for Python runtimes, shared dependencies, and native applications.")
+	hSub, _, _ := procCreateWindowExW.Call(
+		0, uintptr(unsafe.Pointer(staticClass)), uintptr(unsafe.Pointer(subText)),
+		WS_CHILD|WS_VISIBLE,
+		20, 42, 780, 20,
+		hwnd, 0, 0, 0,
+	)
+	if hSub != 0 && font != 0 {
+		procSendMessageW.Call(hSub, WM_SETFONT, font, 1)
+	}
+
+	// Tab buttons
+	btnClass, _ := syscall.UTF16PtrFromString("BUTTON")
+	tabs := []struct {
+		id   int
+		text string
+		x    int32
+		w    int32
+	}{
+		{TabApplications, "1. Applications", 20, 180},
+		{TabPackages, "2. Shared Packages", 210, 180},
+		{TabRuntimes, "3. Python Runtimes", 400, 180},
+		{TabStorage, "4. Storage Overview", 590, 180},
+	}
+
+	for _, t := range tabs {
+		btnTxt, _ := syscall.UTF16PtrFromString(t.text)
+		hBtn, _, _ := procCreateWindowExW.Call(
+			0, uintptr(unsafe.Pointer(btnClass)), uintptr(unsafe.Pointer(btnTxt)),
+			WS_CHILD|WS_VISIBLE,
+			uintptr(t.x), 72, uintptr(t.w), 32,
+			hwnd, uintptr(t.id), 0, 0,
 		)
-		if err != nil || res == BtnNavExit || res == IDCANCEL {
-			break
-		}
-
-		switch res {
-		case BtnNavApps:
-			m.showApplicationsDialog()
-		case BtnNavPackages:
-			m.showPackagePoolDialog()
-		case BtnNavRuntimes:
-			m.showRuntimesDialog()
-		case BtnNavStorage:
-			m.showStorageDialog()
+		if hBtn != 0 && font != 0 {
+			procSendMessageW.Call(hBtn, WM_SETFONT, font, 1)
 		}
 	}
+
+	// Main Display: Read-only multiline Edit control
+	editClass, _ := syscall.UTF16PtrFromString("EDIT")
+	m.hwndEdit, _, _ = procCreateWindowExW.Call(
+		0, uintptr(unsafe.Pointer(editClass)), 0,
+		WS_CHILD|WS_VISIBLE|WS_BORDER|WS_VSCROLL|ES_MULTILINE|ES_READONLY|ES_AUTOVSCROLL,
+		20, 115, 785, 340,
+		hwnd, 0, 0, 0,
+	)
+	if m.hwndEdit != 0 && font != 0 {
+		procSendMessageW.Call(m.hwndEdit, WM_SETFONT, font, 1)
+	}
+
+	// Action buttons
+	actions := []struct {
+		id   int
+		text string
+		x    int32
+		w    int32
+	}{
+		{CmdRefresh, "Refresh", 20, 110},
+		{CmdCleanPackages, "Clean Unused Packages", 140, 175},
+		{CmdLaunchApp, "Launch Application", 325, 150},
+		{CmdRemoveApp, "Remove Application", 485, 150},
+		{CmdClose, "Close", 695, 110},
+	}
+
+	for _, a := range actions {
+		btnTxt, _ := syscall.UTF16PtrFromString(a.text)
+		hBtn, _, _ := procCreateWindowExW.Call(
+			0, uintptr(unsafe.Pointer(btnClass)), uintptr(unsafe.Pointer(btnTxt)),
+			WS_CHILD|WS_VISIBLE,
+			uintptr(a.x), 465, uintptr(a.w), 32,
+			hwnd, uintptr(a.id), 0, 0,
+		)
+		if hBtn != 0 && font != 0 {
+			procSendMessageW.Call(hBtn, WM_SETFONT, font, 1)
+		}
+	}
+
+	// Status label
+	statusTxt, _ := syscall.UTF16PtrFromString("Ready")
+	m.hwndStatus, _, _ = procCreateWindowExW.Call(
+		0, uintptr(unsafe.Pointer(staticClass)), uintptr(unsafe.Pointer(statusTxt)),
+		WS_CHILD|WS_VISIBLE,
+		20, 508, 780, 20,
+		hwnd, 0, 0, 0,
+	)
+	if m.hwndStatus != 0 && font != 0 {
+		procSendMessageW.Call(m.hwndStatus, WM_SETFONT, font, 1)
+	}
+
+	m.refreshView()
+
+	procShowWindow.Call(hwnd, SW_SHOW)
+	procUpdateWindow.Call(hwnd)
+
+	// Standard Win32 message loop: remains open until user closes window
+	var msg MSG
+	for {
+		r, _, _ := procGetMessageW.Call(uintptr(unsafe.Pointer(&msg)), 0, 0, 0)
+		if r == 0 || int32(r) == -1 {
+			break
+		}
+		procTranslateMessage.Call(uintptr(unsafe.Pointer(&msg)))
+		procDispatchMessageW.Call(uintptr(unsafe.Pointer(&msg)))
+	}
+}
+
+func (m *NativeManager) handleCommand(cmdID int) {
+	switch cmdID {
+	case TabApplications:
+		m.activeTab = TabApplications
+		m.refreshView()
+	case TabPackages:
+		m.activeTab = TabPackages
+		m.refreshView()
+	case TabRuntimes:
+		m.activeTab = TabRuntimes
+		m.refreshView()
+	case TabStorage:
+		m.activeTab = TabStorage
+		m.refreshView()
+	case CmdRefresh:
+		m.refreshView()
+		m.setStatus("Refreshed successfully.")
+	case CmdCleanPackages:
+		deleted, freed, err := m.storageMgr.CleanUnusedPackages()
+		if err != nil {
+			ShowMessageBox("Clean Failed", err.Error(), 0x10)
+		} else {
+			ShowMessageBox("Clean Complete", fmt.Sprintf("Removed %d unused package(s), freed %s of disk space.", deleted, FormatBytes(freed)), 0x40)
+			m.refreshView()
+			m.setStatus(fmt.Sprintf("Cleaned %d unused package(s), freed %s.", deleted, FormatBytes(freed)))
+		}
+	case CmdLaunchApp:
+		apps := m.reg.List()
+		if len(apps) == 0 {
+			ShowMessageBox("Launch Application", "No applications are currently installed.", 0x40)
+			return
+		}
+		m.launchApp(apps[0])
+		m.refreshView()
+	case CmdRemoveApp:
+		apps := m.reg.List()
+		if len(apps) == 0 {
+			ShowMessageBox("Remove Application", "No applications are currently installed.", 0x40)
+			return
+		}
+		m.removeApp(apps[0])
+		m.refreshView()
+	case CmdClose:
+		if m.hwndMain != 0 {
+			procDestroyWindow.Call(m.hwndMain)
+		}
+	}
+}
+
+func (m *NativeManager) setStatus(text string) {
+	if m.hwndStatus != 0 {
+		p, _ := syscall.UTF16PtrFromString(text)
+		procSetWindowTextW.Call(m.hwndStatus, uintptr(unsafe.Pointer(p)))
+	}
+}
+
+func (m *NativeManager) refreshView() {
+	if m.hwndEdit == 0 {
+		return
+	}
+
+	apps := m.reg.List()
+	rts, _ := m.runtimes.List()
+	usages, _ := m.storageMgr.GetPackageUsageMap()
+	sum, _ := m.storageMgr.GetSummary()
+
+	unusedCount := 0
+	for _, u := range usages {
+		if u.RefCount == 0 {
+			unusedCount++
+		}
+	}
+
+	var content strings.Builder
+	switch m.activeTab {
+	case TabApplications:
+		content.WriteString(fmt.Sprintf("=== INSTALLED APPLICATIONS (%d) ===\r\n\r\n", len(apps)))
+		if len(apps) == 0 {
+			content.WriteString("No applications registered yet.\r\nLaunch an application built with Hrunner to register it here automatically.\r\n")
+		} else {
+			for idx, app := range apps {
+				content.WriteString(fmt.Sprintf("[%d] %s (v%s)\r\n", idx+1, app.Name, app.Version))
+				content.WriteString(fmt.Sprintf("    Application ID: %s\r\n", app.ApplicationID))
+				content.WriteString(fmt.Sprintf("    Python Runtime: %s\r\n", app.PythonVersion))
+				content.WriteString(fmt.Sprintf("    State:          %s\r\n", app.State))
+				content.WriteString(fmt.Sprintf("    Executable:     %s\r\n", app.ExecutablePath))
+				content.WriteString(fmt.Sprintf("    Dependencies (%d):\r\n", len(app.Dependencies)))
+				for p, v := range app.Dependencies {
+					content.WriteString(fmt.Sprintf("      • %s == %s\r\n", p, v))
+				}
+				content.WriteString("\r\n")
+			}
+		}
+	case TabPackages:
+		content.WriteString(fmt.Sprintf("=== SHARED PACKAGE POOL (%d packages, %d unused) ===\r\n\r\n", len(usages), unusedCount))
+		if len(usages) == 0 {
+			content.WriteString("Shared package pool is currently empty.\r\n")
+		} else {
+			for idx, u := range usages {
+				status := "SHARED"
+				if u.RefCount == 0 {
+					status = "UNUSED"
+				}
+				content.WriteString(fmt.Sprintf("[%d] %s %s [%s]\r\n", idx+1, u.Name, u.Version, status))
+				content.WriteString(fmt.Sprintf("    Reference Count: Used by %d application(s)\r\n", u.RefCount))
+				content.WriteString(fmt.Sprintf("    Disk Size:       %s\r\n", FormatBytes(u.SizeBytes)))
+				content.WriteString(fmt.Sprintf("    Location:        %s\r\n\r\n", m.pkgStore.GetPackageDir(u.Name, u.Version)))
+			}
+		}
+	case TabRuntimes:
+		content.WriteString(fmt.Sprintf("=== INSTALLED PYTHON RUNTIMES (%d) ===\r\n\r\n", len(rts)))
+		if len(rts) == 0 {
+			content.WriteString("No Python runtimes currently installed in central store.\r\n")
+		} else {
+			for idx, r := range rts {
+				content.WriteString(fmt.Sprintf("[%d] Python %s (Size: %s)\r\n", idx+1, r.Version.String(), FormatBytes(r.SizeBytes)))
+				content.WriteString(fmt.Sprintf("    Path: %s\r\n\r\n", r.Path))
+			}
+		}
+	case TabStorage:
+		content.WriteString("=== STORAGE BREAKDOWN ===\r\n\r\n")
+		content.WriteString(fmt.Sprintf("  • Python Runtimes:  %s\r\n", FormatBytes(sum.RuntimesBytes)))
+		content.WriteString(fmt.Sprintf("  • Shared Packages:  %s\r\n", FormatBytes(sum.PackagesBytes)))
+		content.WriteString(fmt.Sprintf("  • Applications:     %s\r\n", FormatBytes(sum.ApplicationsBytes)))
+		content.WriteString(fmt.Sprintf("  • Download Cache:   %s\r\n", FormatBytes(sum.CacheBytes)))
+		content.WriteString("  ─────────────────────────────────────\r\n")
+		content.WriteString(fmt.Sprintf("  Total Disk Usage:   %s\r\n\r\n", FormatBytes(sum.TotalBytes)))
+		content.WriteString(fmt.Sprintf("Central Store Location: %s\r\n", registry.DefaultHrunnerDir()))
+	}
+
+	p, _ := syscall.UTF16PtrFromString(content.String())
+	procSetWindowTextW.Call(m.hwndEdit, uintptr(unsafe.Pointer(p)))
+
+	m.setStatus(fmt.Sprintf("Ready | %d application(s) | %d runtime(s) | %d package(s) (%d unused)",
+		len(apps), len(rts), len(usages), unusedCount))
 }
 
 func (m *NativeManager) showApplicationsDialog() {
